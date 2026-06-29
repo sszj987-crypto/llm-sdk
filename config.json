@@ -1,0 +1,17 @@
+{
+  "openai": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "",
+    "model": "",
+    "workerUrl": ""
+  },
+  "gemini": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "apiKey": "AIzaSyB9bt7rIAm8hCDSuoRawoLlCUdPNq4lNXU",
+    "model": "gemini-2.5-flash",
+    "workerUrl": ""
+  },
+  "tunnel": {
+    "enableEch": false
+  }
+}

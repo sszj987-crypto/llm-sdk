@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Agent Demo</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>LLM Agent</h1>
+        <p>OpenAI-compatible · Gemini · 流式输出</p>
+      </header>
+
+      <section class="panel">
+        <div class="toolbar">
+          <label>
+            Provider
+            <select id="chatProvider">
+              <option value="openai">OpenAI-compatible</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
+          <button id="saveBtn">保存配置</button>
+        </div>
+
+        <div class="grid">
+          <fieldset>
+            <legend>OpenAI-compatible</legend>
+            <label>Base URL <input id="openaiBaseURL" placeholder="https://api.openai.com/v1" /></label>
+            <label>API Key <input id="openaiAPIKey" type="password" /></label>
+            <label>Model <input id="openaiModel" placeholder="gpt-4o-mini" /></label>
+            <label>Worker URL <input id="openaiWorkerURL" placeholder="https://sszj.me" /></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Gemini</legend>
+            <label>Base URL <input id="geminiBaseURL" placeholder="https://generativelanguage.googleapis.com/v1beta/openai" /></label>
+            <label>API Key <input id="geminiAPIKey" type="password" /></label>
+            <label>Model <input id="geminiModel" placeholder="gemini-2.5-flash" /></label>
+            <label>Worker URL <input id="geminiWorkerURL" placeholder="https://sszj.me" /></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Tunnel</legend>
+            <label class="checkbox-label">
+              <input type="checkbox" id="enableEch" />
+              启用 ECH 加密 SNI
+            </label>
+          </fieldset>
+        </div>
+
+        <div class="chat">
+          <div id="messages" class="messages"></div>
+          <div class="composer">
+            <textarea id="prompt" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+            <div class="composer-footer">
+              <button id="sendBtn">发送</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
