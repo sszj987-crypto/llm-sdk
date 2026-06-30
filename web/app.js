@@ -2,9 +2,75 @@ const state = {
   messages: [],
   currentAssistantId: null,
   sending: false,
+  config: null,
 };
 
 const el = (id) => document.getElementById(id);
+
+// ===== Page switching =====
+
+function showSettings() {
+  el("settingsPage").style.display = "";
+  el("chatPage").style.display = "none";
+}
+
+function showChat() {
+  el("settingsPage").style.display = "none";
+  el("chatPage").style.display = "";
+  el("prompt").focus();
+  if (state.config) {
+    el("chatProviderLabel").textContent = state.config.provider === "openai" ? "OpenAI-compatible" : "Gemini";
+  }
+}
+
+// ===== Config =====
+
+function readConfigForm() {
+  return {
+    provider: el("provider").value,
+    baseUrl: el("baseURL").value.trim(),
+    apiKey: el("apiKey").value.trim(),
+    model: el("model").value.trim(),
+    workerUrl: el("workerURL").value.trim(),
+    tunnel: {
+    },
+  };
+}
+
+function fillConfigForm(config) {
+  el("provider").value = config.provider || "gemini";
+  el("baseURL").value = config.baseUrl || "";
+  el("apiKey").value = config.apiKey || "";
+  el("model").value = config.model || "";
+  el("workerURL").value = config.workerUrl || "";
+}
+
+async function loadConfig() {
+  const response = await fetch("/api/config");
+  const config = await response.json();
+  state.config = config;
+  fillConfigForm(config);
+}
+
+async function saveConfig() {
+  const config = readConfigForm();
+  const response = await fetch("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    alert(`\u4fdd\u5b58\u5931\u8d25\uff1a${text}`);
+    return;
+  }
+  state.config = config;
+  const btn = el("saveBtn");
+  btn.textContent = "\u5df2\u4fdd\u5b58";
+  setTimeout(() => { btn.textContent = "\u4fdd\u5b58"; }, 1500);
+}
+
+// ===== Chat =====
 
 function appendMessage(role, content, id = crypto.randomUUID()) {
   const node = document.createElement("article");
@@ -24,73 +90,17 @@ function updateMessage(id, content) {
   el("messages").scrollTop = el("messages").scrollHeight;
 }
 
-function readConfigForm() {
-  return {
-    openai: {
-      baseUrl: el("openaiBaseURL").value.trim(),
-      apiKey: el("openaiAPIKey").value.trim(),
-      model: el("openaiModel").value.trim(),
-      workerUrl: el("openaiWorkerURL").value.trim(),
-    },
-    gemini: {
-      baseUrl: el("geminiBaseURL").value.trim(),
-      apiKey: el("geminiAPIKey").value.trim(),
-      model: el("geminiModel").value.trim(),
-      workerUrl: el("geminiWorkerURL").value.trim(),
-    },
-    tunnel: {
-      enableEch: el("enableEch").checked,
-    },
-  };
-}
-
-function fillConfigForm(config) {
-  el("openaiBaseURL").value = config.openai?.baseUrl ?? "";
-  el("openaiAPIKey").value = config.openai?.apiKey ?? "";
-  el("openaiModel").value = config.openai?.model ?? "";
-  el("openaiWorkerURL").value = config.openai?.workerUrl ?? "";
-
-  el("geminiBaseURL").value = config.gemini?.baseUrl ?? "";
-  el("geminiAPIKey").value = config.gemini?.apiKey ?? "";
-  el("geminiModel").value = config.gemini?.model ?? "";
-  el("geminiWorkerURL").value = config.gemini?.workerUrl ?? "";
-
-  el("enableEch").checked = config.tunnel?.enableEch ?? false;
-}
-
-async function loadConfig() {
-  const response = await fetch("/api/config");
-  const config = await response.json();
-  fillConfigForm(config);
-}
-
-async function saveConfig() {
-  const response = await fetch("/api/config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(readConfigForm()),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    alert(`保存失败：${text}`);
-    return;
-  }
-  const btn = el("saveBtn");
-  btn.textContent = "已保存";
-  setTimeout(() => { btn.textContent = "保存配置"; }, 1500);
-}
-
 function setSending(sending) {
   state.sending = sending;
   const btn = el("sendBtn");
   const textarea = el("prompt");
   if (sending) {
-    btn.textContent = "发送中...";
+    btn.textContent = "\u53d1\u9001\u4e2d...";
     btn.disabled = true;
     btn.style.opacity = "0.6";
     textarea.disabled = true;
   } else {
-    btn.textContent = "发送";
+    btn.textContent = "\u53d1\u9001";
     btn.disabled = false;
     btn.style.opacity = "1";
     textarea.disabled = false;
@@ -104,7 +114,12 @@ async function sendMessage() {
   const prompt = el("prompt").value.trim();
   if (!prompt) return;
 
-  const provider = el("chatProvider").value;
+  if (!state.config) {
+    alert("\u8bf7\u5148\u4fdd\u5b58\u8bbe\u7f6e");
+    return;
+  }
+
+  const provider = state.config.provider;
   state.messages.push({ role: "user", content: prompt });
   appendMessage("user", prompt);
   el("prompt").value = "";
@@ -128,8 +143,8 @@ async function sendMessage() {
 
     if (!response.ok || !response.body) {
       const text = await response.text();
-      updateMessage(assistantId, `错误：${text}`);
-      state.messages.push({ role: "assistant", content: `错误：${text}` });
+      updateMessage(assistantId, `\u9519\u8bef\uff1a${text}`);
+      state.messages.push({ role: "assistant", content: `\u9519\u8bef\uff1a${text}` });
       return;
     }
 
@@ -159,7 +174,7 @@ async function sendMessage() {
           assistantText += event.content;
           updateMessage(assistantId, assistantText);
         } else if (event.type === "error") {
-          assistantText = `错误：${event.content || "unknown"}`;
+          assistantText = `\u9519\u8bef\uff1a${event.content || "unknown"}`;
           updateMessage(assistantId, assistantText);
         } else if (event.type === "done") {
           break;
@@ -167,7 +182,7 @@ async function sendMessage() {
       }
     }
   } catch (err) {
-    assistantText = `网络错误：${err.message || String(err)}`;
+    assistantText = `\u7f51\u7edc\u9519\u8bef\uff1a${err.message || String(err)}`;
     updateMessage(assistantId, assistantText);
   } finally {
     setSending(false);
@@ -175,7 +190,8 @@ async function sendMessage() {
   }
 }
 
-// Enter to send, Shift+Enter for newline
+// ===== Event listeners =====
+
 el("prompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -187,10 +203,16 @@ el("prompt").addEventListener("keydown", (e) => {
 });
 
 el("saveBtn").addEventListener("click", () => saveConfig().catch((err) => alert(String(err))));
+el("goChatBtn").addEventListener("click", () => {
+  saveConfig().then(() => showChat()).catch((err) => alert(String(err)));
+});
+el("goSettingsBtn").addEventListener("click", showSettings);
 el("sendBtn").addEventListener("click", () => sendMessage().catch((err) => {
   alert(String(err));
   setSending(false);
 }));
+
+// ===== Init =====
 
 loadConfig().catch((err) => {
   console.error(err);

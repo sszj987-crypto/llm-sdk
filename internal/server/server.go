@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,22 +15,22 @@ import (
 
 	assets "llm-sdk"
 	"llm-sdk/internal/config"
-	"llm-sdk/internal/ech"
+	"llm-sdk/internal/dialer"
 	"llm-sdk/internal/ipdb"
 	"llm-sdk/internal/provider"
 )
 
 type Server struct {
-	store     *config.Store
-	client    *http.Client
-	echDialer *ech.Dialer
+	store  *config.Store
+	client *http.Client
+	echDialer *dialer.Dialer
 	ipdbCli   *ipdb.Client
-	openAI    *provider.OpenAIAdapter
-	gemini    *provider.GeminiAdapter
+	openAI *provider.OpenAIAdapter
+	gemini *provider.GeminiAdapter
 }
 
 func New(store *config.Store) (*Server, error) {
-	echDialer := ech.NewDialer()
+	echDialer := dialer.New()
 
 	// Start IPDB client for auto-fetching preferred CF IPs.
 	ipdbCli := ipdb.NewClient()
@@ -63,20 +62,13 @@ func New(store *config.Store) (*Server, error) {
 		Timeout:   0,
 		Transport: transport,
 	}
-
-	// Load config and apply ECH toggle + tunnel settings.
-	cfg, err := store.Load()
-	if err == nil {
-		applyEchConfig(echDialer, cfg)
-	}
-
 	return &Server{
-		store:     store,
-		client:    client,
+		store:  store,
+		client: client,
 		echDialer: echDialer,
 		ipdbCli:   ipdbCli,
-		openAI:    provider.NewOpenAIAdapter(client),
-		gemini:    provider.NewGeminiAdapter(client),
+		openAI: provider.NewOpenAIAdapter(client),
+		gemini: provider.NewGeminiAdapter(client),
 	}, nil
 }
 
@@ -112,13 +104,6 @@ func stringsIndexByte(s string, c byte) int {
 	return -1
 }
 
-func applyEchConfig(d *ech.Dialer, cfg config.Config) {
-	if cfg.Tunnel.EnableEch {
-		d.SetEnableECH(true)
-		log.Printf("[server] ech_enabled=true")
-	}
-}
-
 func (s *Server) Register(mux *http.ServeMux) {
 	webSubFS, err := fs.Sub(assets.WebFS, "web")
 	if err != nil {
@@ -128,32 +113,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/chat", s.handleChat)
 	mux.HandleFunc("/api/ipdb/status", s.handleIpdbStatus)
-}
-
-func (s *Server) handleIpdbStatus(w http.ResponseWriter, r *http.Request) {
-	if s.ipdbCli == nil {
-		s.writeJSON(w, map[string]any{"enabled": false, "count": 0})
-		return
-	}
-	ips := s.ipdbCli.GetAllIPs()
-	s.writeJSON(w, map[string]any{
-		"enabled": s.ipdbCli.Count() > 0,
-		"count":   len(ips),
-		"sample":  sampleIPs(ips, 5),
-	})
-}
-
-func sampleIPs(ips []string, n int) []string {
-	if len(ips) <= n {
-		return ips
-	}
-	out := make([]string, n)
-	for i := 0; i < n; i++ {
-		// Take evenly distributed samples.
-		idx := i * (len(ips) - 1) / (n - 1)
-		out[i] = ips[idx]
-	}
-	return out
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +134,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		applyEchConfig(s.echDialer, cfg)
 		s.writeJSON(w, map[string]any{"ok": true})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -209,10 +167,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	selected, err := selectProviderConfig(cfg, req.Provider)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	providerName := req.Provider
+	if providerName == "" {
+		providerName = cfg.Provider
+	}
+	selected := provider.Config{
+		BaseURL:   cfg.BaseURL,
+		APIKey:    cfg.APIKey,
+		Model:     cfg.Model,
+		WorkerURL: cfg.WorkerURL,
 	}
 	log.Printf("[request_id=%s] provider_config base_url=%s model=%s worker_url_set=%t", requestID, selected.BaseURL, selected.Model, selected.WorkerURL != "")
 
@@ -236,7 +199,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return s.writeLine(w, payload, flusher)
 	}
 
-	err = s.chatStream(r.Context(), req.Provider, selected, req.Messages, func(delta string) error {
+	err = s.chatStream(r.Context(), providerName, selected, req.Messages, func(delta string) error {
 		return writeEvent("delta", delta)
 	})
 	if err != nil {
@@ -259,27 +222,6 @@ func (s *Server) chatStream(ctx context.Context, providerName string, cfg provid
 	}
 }
 
-func selectProviderConfig(cfg config.Config, providerName string) (provider.Config, error) {
-	switch providerName {
-	case string(config.ProviderOpenAI):
-		return provider.Config{
-			BaseURL:   cfg.OpenAI.BaseURL,
-			APIKey:    cfg.OpenAI.APIKey,
-			Model:     cfg.OpenAI.Model,
-			WorkerURL: cfg.OpenAI.WorkerURL,
-		}, nil
-	case string(config.ProviderGemini):
-		return provider.Config{
-			BaseURL:   cfg.Gemini.BaseURL,
-			APIKey:    cfg.Gemini.APIKey,
-			Model:     cfg.Gemini.Model,
-			WorkerURL: cfg.Gemini.WorkerURL,
-		}, nil
-	default:
-		return provider.Config{}, errors.New("unknown provider")
-	}
-}
-
 func (s *Server) writeLine(w http.ResponseWriter, payload any, flusher http.Flusher) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -295,4 +237,28 @@ func (s *Server) writeLine(w http.ResponseWriter, payload any, flusher http.Flus
 func (s *Server) writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+func (s *Server) handleIpdbStatus(w http.ResponseWriter, r *http.Request) {
+	if s.ipdbCli == nil {
+		s.writeJSON(w, map[string]any{"enabled": false, "count": 0})
+		return
+	}
+	ips := s.ipdbCli.GetAllIPs()
+	s.writeJSON(w, map[string]any{
+		"enabled": s.ipdbCli.Count() > 0,
+		"count":   len(ips),
+		"sample":  sampleIPs(ips, 5),
+	})
+}
+
+func sampleIPs(ips []string, n int) []string {
+	if len(ips) <= n {
+		return ips
+	}
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		idx := i * (len(ips) - 1) / (n - 1)
+		out[i] = ips[idx]
+	}
+	return out
 }

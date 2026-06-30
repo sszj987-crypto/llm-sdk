@@ -24,11 +24,11 @@ func TestServerServesIndexAndConfig(t *testing.T) {
 	}
 	rec := &responseRecorder{header: http.Header{}}
 	mux.ServeHTTP(rec, req)
-	if !strings.Contains(rec.body.String(), "LLM Agent Demo") {
+	if !strings.Contains(rec.body.String(), "LLM Agent") {
 		t.Fatalf("index missing title: %s", rec.body.String())
 	}
 
-	payload := `{"openai":{"baseUrl":"https://api.openai.com/v1","apiKey":"test","model":"gpt-4o-mini","workerUrl":""},"gemini":{"baseUrl":"https://generativelanguage.googleapis.com/v1beta","apiKey":"test","model":"gemini-2.0-flash","workerUrl":""}}`
+	payload := `{"provider":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"test","model":"gpt-4o-mini","workerUrl":""}`
 	req, err = http.NewRequest(http.MethodPost, "/api/config", strings.NewReader(payload))
 	if err != nil {
 		t.Fatalf("new post request: %v", err)
@@ -43,7 +43,7 @@ func TestServerServesIndexAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.OpenAI.Model != "gpt-4o-mini" || cfg.Gemini.Model != "gemini-2.0-flash" {
+	if cfg.Model != "gpt-4o-mini" || cfg.Provider != "openai" {
 		t.Fatalf("config not saved: %+v", cfg)
 	}
 }

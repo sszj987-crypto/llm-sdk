@@ -15,36 +15,19 @@ const (
 	ProviderGemini ProviderKind = "gemini"
 )
 
-type ProviderConfig struct {
+type Config struct {
+	Provider  string `json:"provider"`
 	BaseURL   string `json:"baseUrl"`
 	APIKey    string `json:"apiKey"`
 	Model     string `json:"model"`
 	WorkerURL string `json:"workerUrl"`
 }
 
-// TunnelConfig holds ECH settings for the outbound TLS connection.
-// Preferred IP is no longer a manual config — it auto-fetches from IPDB at runtime.
-type TunnelConfig struct {
-	EnableEch bool `json:"enableEch"`
-}
-
-type Config struct {
-	OpenAI ProviderConfig `json:"openai"`
-	Gemini ProviderConfig `json:"gemini"`
-	Tunnel TunnelConfig   `json:"tunnel"`
-}
-
 func Default() Config {
 	return Config{
-		OpenAI: ProviderConfig{
-			BaseURL: "https://api.openai.com/v1",
-		},
-		Gemini: ProviderConfig{
-			BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-		},
-		Tunnel: TunnelConfig{
-			EnableEch: false,
-		},
+		Provider: string(ProviderGemini),
+		BaseURL:  "https://generativelanguage.googleapis.com/v1beta/openai",
+		Model:    "gemini-2.5-flash",
 	}
 }
 
@@ -97,10 +80,13 @@ func (s *Store) Save(cfg Config) error {
 }
 
 func (c *Config) applyDefaults() {
-	if c.OpenAI.BaseURL == "" {
-		c.OpenAI.BaseURL = "https://api.openai.com/v1"
+	if c.Provider == "" {
+		c.Provider = string(ProviderGemini)
 	}
-	if c.Gemini.BaseURL == "" {
-		c.Gemini.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	if c.BaseURL == "" {
+		c.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	}
+	if c.Model == "" {
+		c.Model = "gemini-2.5-flash"
 	}
 }
