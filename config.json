@@ -3,5 +3,6 @@
   "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
   "apiKey": "",
   "model": "gemini-2.5-flash",
-  "workerUrl": "https://"
+  "workerUrl": "https://",
+  "quicEnable": true
 }

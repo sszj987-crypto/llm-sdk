@@ -16,7 +16,8 @@
 | 场景 | TLS 握手完成 | 首字返回 |
 |------|------------|---------|
 | 开启 VPN | ~450ms | ~1.65s |
-| Cloudflare Worker（不开 VPN） | ~175ms | ~1.2s |
+| Cloudflare Worker | ~175ms | ~1.2s |
+| Worker + QUIC | ~93ms | ~988ms |
 
 不开 VPN 反而更快，因为绕过了 VPN 多一跳的延迟。
 

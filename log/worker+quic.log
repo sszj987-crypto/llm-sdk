@@ -1,0 +1,18 @@
+2026/06/30 17:36:07 [request_id=chat-1782812167603242000] chat_received ts=2026-06-30T17:36:07.603242+08:00 provider=gemini messages=1
+2026/06/30 17:36:07 [request_id=chat-1782812167603242000] provider_config base_url=https://generativelanguage.googleapis.com/v1beta/openai model=gemini-2.5-flash worker_url_set=true
+2026/06/30 17:36:07 [provider=gemini] request_start ts=2026-06-30T17:36:07.603421+08:00 target=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+2026/06/30 17:36:07 [provider=gemini] model=gemini-2.5-flash base_url=https://generativelanguage.googleapis.com/v1beta/openai resolved_base_url=https://generativelanguage.googleapis.com/v1beta/openai worker_url_set=true
+2026/06/30 17:36:07 [provider=gemini] outbound_url=https://sszj.me target_url=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions via_worker=true
+2026/06/30 17:36:07 [provider=gemini] trace_get_conn ts=2026-06-30T17:36:07.603461+08:00 elapsed=0s host=sszj.me:443
+2026/06/30 17:36:07 [dialer] dial domain=sszj.me addr=104.17.185.116:443 source=ipdb
+2026/06/30 17:36:07 [provider=gemini] trace_connect_start ts=2026-06-30T17:36:07.603502+08:00 elapsed=0s network=tcp4 addr=104.17.185.116:443
+2026/06/30 17:36:07 [provider=gemini] trace_connect_done ts= 2026-06-30T17:36:07.622411+08:00 elapsed= 19ms connect_elapsed= 19ms network= tcp4 addr= 104.17.185.116:443
+2026/06/30 17:36:07 [provider=gemini] trace_tls_start ts=2026-06-30T17:36:07.695962+08:00 elapsed=93ms
+2026/06/30 17:36:07 [provider=gemini] trace_tls_done ts= 2026-06-30T17:36:07.695982+08:00 elapsed= 93ms tls_elapsed= 0s
+2026/06/30 17:36:07 [provider=gemini] trace_got_conn ts=2026-06-30T17:36:07.695999+08:00 elapsed=93ms reused=false idle_time=0s was_idle=false
+2026/06/30 17:36:07 [provider=gemini] trace_wrote_request ts= 2026-06-30T17:36:07.696076+08:00 elapsed= 93ms
+2026/06/30 17:36:08 [provider=gemini] trace_first_response_byte ts=2026-06-30T17:36:08.590315+08:00 elapsed=987ms
+2026/06/30 17:36:08 [provider=gemini] response_headers ts=2026-06-30T17:36:08.590629+08:00 elapsed=987ms status=200 OK
+2026/06/30 17:36:08 [provider=gemini] first_delta ts=2026-06-30T17:36:08.590807+08:00 elapsed_since_headers=0s delta_bytes=42
+2026/06/30 17:36:08 [provider=gemini] stream_done ts= 2026-06-30T17:36:08.591019+08:00 total_elapsed= 988ms headers_elapsed= 987ms first_delta_elapsed= 0s
+2026/06/30 17:36:08 [request_id=chat-1782812167603242000] chat_done ts=2026-06-30T17:36:08.591108+08:00 elapsed=988ms

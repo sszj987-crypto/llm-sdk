@@ -13,6 +13,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
+
 	assets "llm-sdk"
 	"llm-sdk/internal/config"
 	"llm-sdk/internal/dialer"
@@ -25,6 +28,7 @@ type Server struct {
 	client *http.Client
 	echDialer *dialer.Dialer
 	ipdbCli   *ipdb.Client
+	quicTransport *http3.Transport
 	openAI *provider.OpenAIAdapter
 	gemini *provider.GeminiAdapter
 }
@@ -62,11 +66,27 @@ func New(store *config.Store) (*Server, error) {
 		Timeout:   0,
 		Transport: transport,
 	}
+
+	// QUIC transport (HTTP/3 over UDP) for opt-in fast path.
+	quicDialer := dialer.NewQuicDialer()
+	if ipdbCli != nil && ipdbCli.Count() > 0 {
+		quicDialer.SetIPProvider(ipdbCli)
+	}
+	quicTransport := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13,
+		},
+		QUICConfig: &quic.Config{
+			HandshakeIdleTimeout: 15 * time.Second,
+		},
+		Dial: quicDialer.Dial,
+	}
 	return &Server{
 		store:  store,
 		client: client,
 		echDialer: echDialer,
 		ipdbCli:   ipdbCli,
+		quicTransport: quicTransport,
 		openAI: provider.NewOpenAIAdapter(client),
 		gemini: provider.NewGeminiAdapter(client),
 	}, nil
@@ -76,6 +96,9 @@ func New(store *config.Store) (*Server, error) {
 func (s *Server) Shutdown() {
 	if s.ipdbCli != nil {
 		s.ipdbCli.Stop()
+	}
+	if s.quicTransport != nil {
+		s.quicTransport.Close()
 	}
 }
 
@@ -199,7 +222,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return s.writeLine(w, payload, flusher)
 	}
 
-	err = s.chatStream(r.Context(), providerName, selected, req.Messages, func(delta string) error {
+	err = s.chatStream(r.Context(), providerName, cfg.QuicEnable, selected, req.Messages, func(delta string) error {
 		return writeEvent("delta", delta)
 	})
 	if err != nil {
@@ -211,12 +234,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[request_id=%s] chat_done ts=%s elapsed=%s", requestID, time.Now().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond))
 }
 
-func (s *Server) chatStream(ctx context.Context, providerName string, cfg provider.Config, messages []provider.Message, onDelta provider.StreamHandler) error {
+func (s *Server) chatStream(ctx context.Context, providerName string, useQUIC bool, cfg provider.Config, messages []provider.Message, onDelta provider.StreamHandler) error {
+	client := s.client
+	if useQUIC && s.quicTransport != nil {
+		client = &http.Client{
+			Timeout:   0,
+			Transport: s.quicTransport,
+		}
+	}
 	switch providerName {
 	case string(config.ProviderOpenAI):
-		return s.openAI.Chat(ctx, cfg, messages, onDelta)
+		return provider.NewOpenAIAdapter(client).Chat(ctx, cfg, messages, onDelta)
 	case string(config.ProviderGemini):
-		return s.gemini.Chat(ctx, cfg, messages, onDelta)
+		return provider.NewGeminiAdapter(client).Chat(ctx, cfg, messages, onDelta)
 	default:
 		return fmt.Errorf("unsupported provider: %s", providerName)
 	}

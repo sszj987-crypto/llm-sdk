@@ -21,6 +21,7 @@ type Config struct {
 	APIKey    string `json:"apiKey"`
 	Model     string `json:"model"`
 	WorkerURL string `json:"workerUrl"`
+	QuicEnable bool   `json:"quicEnable"`
 }
 
 func Default() Config {
