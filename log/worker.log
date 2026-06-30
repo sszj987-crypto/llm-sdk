@@ -1,0 +1,23 @@
+logging initialized log_dir=/Users/shenzhijian/Documents/llm-sdk/log log_file=/Users/shenzhijian/Documents/llm-sdk/log/llm-agent.log
+2026/06/30 14:54:39 paths ready config_path=/Users/shenzhijian/Documents/llm-sdk/config.json log_dir=/Users/shenzhijian/Documents/llm-sdk/log
+2026/06/30 14:54:40 [ipdb] refreshed count=10
+2026/06/30 14:54:40 [server] ipdb_initialized preferred_ips=10
+2026/06/30 14:54:40 listening on http://127.0.0.1:8787
+2026/06/30 14:54:47 [request_id=chat-1782802487305563000] chat_received ts=2026-06-30T14:54:47.305563+08:00 provider=gemini messages=1
+2026/06/30 14:54:47 [request_id=chat-1782802487305563000] provider_config base_url=https://generativelanguage.googleapis.com/v1beta/openai model=gemini-2.5-flash worker_url_set=true
+2026/06/30 14:54:47 [provider=gemini] request_start ts=2026-06-30T14:54:47.305762+08:00 target=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+2026/06/30 14:54:47 [provider=gemini] model=gemini-2.5-flash base_url=https://generativelanguage.googleapis.com/v1beta/openai resolved_base_url=https://generativelanguage.googleapis.com/v1beta/openai worker_url_set=true
+2026/06/30 14:54:47 [provider=gemini] outbound_url=https://sszj.me target_url=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions via_worker=true
+2026/06/30 14:54:47 [provider=gemini] trace_get_conn ts=2026-06-30T14:54:47.305806+08:00 elapsed=0s host=sszj.me:443
+2026/06/30 14:54:47 [dialer] dial domain=sszj.me addr=198.41.209.40:443 source=ipdb
+2026/06/30 14:54:47 [provider=gemini] trace_connect_start ts=2026-06-30T14:54:47.305882+08:00 elapsed=0s network=tcp4 addr=198.41.209.40:443
+2026/06/30 14:54:47 [provider=gemini] trace_connect_done ts= 2026-06-30T14:54:47.332171+08:00 elapsed= 26ms connect_elapsed= 26ms network= tcp4 addr= 198.41.209.40:443
+2026/06/30 14:54:47 [provider=gemini] trace_tls_start ts=2026-06-30T14:54:47.4893+08:00 elapsed=184ms
+2026/06/30 14:54:47 [provider=gemini] trace_tls_done ts= 2026-06-30T14:54:47.489401+08:00 elapsed= 184ms tls_elapsed= 0s
+2026/06/30 14:54:47 [provider=gemini] trace_got_conn ts=2026-06-30T14:54:47.489441+08:00 elapsed=184ms reused=false idle_time=0s was_idle=false
+2026/06/30 14:54:47 [provider=gemini] trace_wrote_request ts= 2026-06-30T14:54:47.489609+08:00 elapsed= 184ms
+2026/06/30 14:54:48 [provider=gemini] trace_first_response_byte ts=2026-06-30T14:54:48.57604+08:00 elapsed=1.27s
+2026/06/30 14:54:48 [provider=gemini] response_headers ts=2026-06-30T14:54:48.57634+08:00 elapsed=1.271s status=200 OK
+2026/06/30 14:54:48 [provider=gemini] first_delta ts=2026-06-30T14:54:48.576484+08:00 elapsed_since_headers=0s delta_bytes=42
+2026/06/30 14:54:48 [provider=gemini] stream_done ts= 2026-06-30T14:54:48.576639+08:00 total_elapsed= 1.271s headers_elapsed= 1.271s first_delta_elapsed= 0s
+2026/06/30 14:54:48 [request_id=chat-1782802487305563000] chat_done ts=2026-06-30T14:54:48.576687+08:00 elapsed=1.271s
