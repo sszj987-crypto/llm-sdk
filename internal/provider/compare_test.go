@@ -115,6 +115,9 @@ func TestCompareScenarios(t *testing.T) {
 			r.quicHS = sc.quicDialer.LastHandshake
 		}
 		results[i] = r
+			if i < len(scenarios)-1 {
+				time.Sleep(time.Second)
+			}
 	}
 
 	fmt.Println()
