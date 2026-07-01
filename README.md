@@ -21,11 +21,6 @@
 | Cloudflare Worker | ~175ms | ~1.2s |
 | Worker + QUIC | ~93ms | ~988ms |
 
-| 场景 | TLS 握手完成 | 首字返回 |
-|------|------------|---------|
-| Worker + QUIC | ~93ms | ~988ms |
-| Worker + QUIC | ~93ms | ~988ms |
-
 ## 启动
 
 ```bash
@@ -57,6 +52,30 @@ LLM_AGENT_NO_BROWSER=1 go run ./cmd/llmagent
 
 - Worker 的 **placement** 设为美国西部（Region - US West），确保出口 IP 不被 API 地区限制
 - 请求通过 `X-Target-Url` 指定实际目标，Worker 透明转发
+
+### 部署
+
+在 CF 面板上传 `worker/worker.js`，创建 Worker 并绑定域名。
+
+**自动化方案**（可选）：通过 `wrangler` CLI 部署，免去手动上传步骤。
+
+添加 `worker/wrangler.toml`：
+
+```toml
+name = "llm-agent-worker"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+```
+
+```bash
+npx wrangler login      # 首次：登录 Cloudflare 账号
+npx wrangler deploy     # 部署
+```
+
+**无法自动化的部分：**
+
+- **域名** — 需要先在 CF 上注册域名、配好 DNS，然后面板绑定 Worker route
+- **Placement** — `wrangler.toml` 只支持 `mode = "smart"`（自动选择），指定具体 region（美西）需在 CF 面板设置一次，之后持久生效
 
 ## 日志
 
