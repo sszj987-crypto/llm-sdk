@@ -145,6 +145,37 @@ type requestTrace struct {
 	firstByteAt time.Time
 }
 
+// Summary returns key timing milestones relative to request start.
+// Fields that were not recorded (e.g. TLS for QUIC) are omitted.
+func (t *requestTrace) Summary() map[string]time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	m := make(map[string]time.Duration)
+	if !t.getConnAt.IsZero() {
+		m["get_conn"] = t.getConnAt.Sub(t.start)
+	}
+	if !t.gotConnAt.IsZero() {
+		m["got_conn"] = t.gotConnAt.Sub(t.start)
+		if !t.getConnAt.IsZero() {
+			m["conn_wait"] = t.gotConnAt.Sub(t.getConnAt)
+		}
+	}
+	if !t.connectAt.IsZero() && !t.connectDone.IsZero() {
+		m["connect"] = t.connectDone.Sub(t.connectAt)
+	}
+	if !t.tlsAt.IsZero() && !t.tlsDone.IsZero() {
+		m["tls"] = t.tlsDone.Sub(t.tlsAt)
+	}
+	if !t.wroteAt.IsZero() {
+		m["wrote_request"] = t.wroteAt.Sub(t.start)
+	}
+	if !t.firstByteAt.IsZero() {
+		m["first_byte"] = t.firstByteAt.Sub(t.start)
+	}
+	return m
+}
+
 func newRequestTrace(providerName, targetURL string, start time.Time) *requestTrace {
 	return &requestTrace{
 		provider:  providerName,

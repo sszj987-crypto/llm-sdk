@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/quic-go/quic-go"
 )
@@ -13,6 +14,10 @@ import (
 // QuicDialer dials using QUIC (UDP) with optional preferred-IP support via IPDB.
 type QuicDialer struct {
 	ipProvider IPProvider
+
+	// ponytail: stage timing for test comparison, set on each Dial call
+	LastResolve   time.Duration // DNS resolve
+	LastHandshake time.Duration // QUIC handshake (includes TLS)
 }
 
 // NewQuicDialer creates a new QUIC dialer.
@@ -44,21 +49,25 @@ func (d *QuicDialer) Dial(ctx context.Context, addr string, tlsCfg *tls.Config, 
 	target := net.JoinHostPort(host, port)
 	log.Printf("[quic_dialer] dial addr=%s target=%s source=%s", addr, target, ipSource)
 
+	resolveStart := time.Now()
 	udpAddr, err := net.ResolveUDPAddr("udp", target)
 	if err != nil {
 		return nil, fmt.Errorf("quic resolve %s: %w", target, err)
 	}
+	d.LastResolve = time.Since(resolveStart)
 
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return nil, fmt.Errorf("quic listen udp: %w", err)
 	}
 
+	handshakeStart := time.Now()
 	conn, err := quic.Dial(ctx, udpConn, udpAddr, tlsCfg, quicCfg)
 	if err != nil {
 		udpConn.Close()
 		return nil, fmt.Errorf("quic dial %s: %w", target, err)
 	}
+	d.LastHandshake = time.Since(handshakeStart)
 
 	return conn, nil
 }

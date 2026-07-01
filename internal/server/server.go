@@ -34,6 +34,11 @@ type Server struct {
 }
 
 func New(store *config.Store) (*Server, error) {
+	cfg, err := store.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
 	echDialer := dialer.New()
 
 	// Start IPDB client for auto-fetching preferred CF IPs.
@@ -45,50 +50,68 @@ func New(store *config.Store) (*Server, error) {
 		log.Printf("[server] ipdb_no_ips — falling back to DNS resolution")
 	}
 
-	transport := &http.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := netSplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			if port != "" {
-				echDialer.Port = port
-			}
-			return echDialer.DialTLSContext(ctx, network, host)
-		},
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13,
-		},
-		ForceAttemptHTTP2: true,
+	var client *http.Client
+	var quicTransport *http3.Transport
+
+	if cfg.QuicEnable {
+		log.Printf("[server] quic_enabled — using HTTP/3 transport")
+
+		quicDialer := dialer.NewQuicDialer()
+		if ipdbCli != nil && ipdbCli.Count() > 0 {
+			quicDialer.SetIPProvider(ipdbCli)
+		}
+		qt := &http3.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
+			QUICConfig: &quic.Config{
+				HandshakeIdleTimeout:       15 * time.Second,
+				Allow0RTT:                  true,
+				InitialStreamReceiveWindow: 5 * 1024 * 1024,
+				DisablePathMTUDiscovery:    true,
+				InitialPacketSize:          1450,
+			},
+			Dial: quicDialer.Dial,
+		}
+		quicTransport = qt
+		client = &http.Client{
+			Timeout:   0,
+			Transport: qt,
+		}
+	} else {
+		log.Printf("[server] quic_disabled — using TCP/HTTP2 transport")
+
+		transport := &http.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := netSplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				if port != "" {
+					echDialer.Port = port
+				}
+				return echDialer.DialTLSContext(ctx, network, host)
+			},
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+			},
+			ForceAttemptHTTP2: true,
+		}
+
+		client = &http.Client{
+			Timeout:   0,
+			Transport: transport,
+		}
 	}
 
-	client := &http.Client{
-		Timeout:   0,
-		Transport: transport,
-	}
-
-	// QUIC transport (HTTP/3 over UDP) for opt-in fast path.
-	quicDialer := dialer.NewQuicDialer()
-	if ipdbCli != nil && ipdbCli.Count() > 0 {
-		quicDialer.SetIPProvider(ipdbCli)
-	}
-	quicTransport := &http3.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13,
-		},
-		QUICConfig: &quic.Config{
-			HandshakeIdleTimeout: 15 * time.Second,
-		},
-		Dial: quicDialer.Dial,
-	}
 	return &Server{
-		store:  store,
-		client: client,
-		echDialer: echDialer,
-		ipdbCli:   ipdbCli,
+		store:         store,
+		client:        client,
+		echDialer:     echDialer,
+		ipdbCli:       ipdbCli,
 		quicTransport: quicTransport,
-		openAI: provider.NewOpenAIAdapter(client),
-		gemini: provider.NewGeminiAdapter(client),
+		openAI:        provider.NewOpenAIAdapter(client),
+		gemini:        provider.NewGeminiAdapter(client),
 	}, nil
 }
 
@@ -222,7 +245,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return s.writeLine(w, payload, flusher)
 	}
 
-	err = s.chatStream(r.Context(), providerName, cfg.QuicEnable, selected, req.Messages, func(delta string) error {
+	err = s.chatStream(r.Context(), providerName, selected, req.Messages, func(delta string) error {
 		return writeEvent("delta", delta)
 	})
 	if err != nil {
@@ -234,14 +257,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[request_id=%s] chat_done ts=%s elapsed=%s", requestID, time.Now().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond))
 }
 
-func (s *Server) chatStream(ctx context.Context, providerName string, useQUIC bool, cfg provider.Config, messages []provider.Message, onDelta provider.StreamHandler) error {
+func (s *Server) chatStream(ctx context.Context, providerName string, cfg provider.Config, messages []provider.Message, onDelta provider.StreamHandler) error {
 	client := s.client
-	if useQUIC && s.quicTransport != nil {
-		client = &http.Client{
-			Timeout:   0,
-			Transport: s.quicTransport,
-		}
-	}
 	switch providerName {
 	case string(config.ProviderOpenAI):
 		return provider.NewOpenAIAdapter(client).Chat(ctx, cfg, messages, onDelta)

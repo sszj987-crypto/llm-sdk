@@ -380,3 +380,23 @@ header:has(.ghost-btn) {
     max-width: 95%;
   }
 }
+
+/* ===== QUIC Toggle ===== */
+.quic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text);
+  cursor: pointer;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.quic-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}

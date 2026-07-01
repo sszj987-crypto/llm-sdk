@@ -4,5 +4,5 @@
   "apiKey": "",
   "model": "gemini-2.5-flash",
   "workerUrl": "https://",
-  "quicEnable": true
+  "quicEnable": false
 }

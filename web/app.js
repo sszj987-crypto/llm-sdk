@@ -32,8 +32,7 @@ function readConfigForm() {
     apiKey: el("apiKey").value.trim(),
     model: el("model").value.trim(),
     workerUrl: el("workerURL").value.trim(),
-    tunnel: {
-    },
+    quicEnable: el("quicEnable").checked,
   };
 }
 
@@ -43,6 +42,7 @@ function fillConfigForm(config) {
   el("apiKey").value = config.apiKey || "";
   el("model").value = config.model || "";
   el("workerURL").value = config.workerUrl || "";
+  el("quicEnable").checked = config.quicEnable === true;
 }
 
 async function loadConfig() {

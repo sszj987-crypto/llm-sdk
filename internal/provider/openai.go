@@ -13,7 +13,8 @@ import (
 )
 
 type OpenAIAdapter struct {
-	Client *http.Client
+	Client    *http.Client
+	LastTrace *requestTrace // ponytail: test access to timing data
 }
 
 func NewOpenAIAdapter(client *http.Client) *OpenAIAdapter {
@@ -47,6 +48,7 @@ func (a *OpenAIAdapter) Chat(ctx context.Context, cfg Config, messages []Message
 		return err
 	}
 	trace := newRequestTrace("openai", targetURL, start)
+	a.LastTrace = trace
 	req = req.WithContext(trace.withContext(req.Context()))
 	req, err = maybeWrapWithWorker(cfg.WorkerURL, targetURL, req)
 	if err != nil {
