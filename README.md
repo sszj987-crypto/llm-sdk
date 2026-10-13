@@ -1,6 +1,14 @@
-# LLM Agent
+# LLM Agent Gateway
 
-不通过 VPN，直连国外大模型。
+本地 OpenAI-compatible 网关，用一个本地地址接入多个大模型 profile，并按 profile 选择直连、Cloudflare Worker SNI 和 HTTP3/QUIC。
+
+## 核心能力
+
+- **本地 OpenAI API**：`POST /v1/chat/completions`、`GET /v1/models`
+- **多 Profile 管理**：每个 profile 独立配置 provider、模型、上游地址、API Key、传输策略
+- **协议统一**：外部客户端只使用 OpenAI 格式，Gemini 走 OpenAI-compatible endpoint
+- **传输策略**：`direct` 或 `worker_sni` 互斥，HTTP3/QUIC 作为独立优化开关
+- **诊断可视化**：Worker 健康检查、状态码、错误分类、TCP/TLS/首字节/首 token/总耗时
 
 ## 原理
 
@@ -35,16 +43,42 @@ go run ./cmd/llmagent
 LLM_AGENT_NO_BROWSER=1 go run ./cmd/llmagent
 ```
 
+## OpenAI-compatible 接入
+
+本地网关地址：
+
+```text
+http://127.0.0.1:8787/v1
+```
+
+示例：
+
+```bash
+curl http://127.0.0.1:8787/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer local-placeholder' \
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{"role":"user","content":"hello"}],
+    "stream": true
+  }'
+```
+
+本地 `Authorization` 第一版不强校验；真实上游 key 从对应 profile 读取。
+
 ## 配置
 
-在页面中填写：
+配置保存在项目目录 `config.json`，页面支持多个 profile：
 
-- **URL**：API 地址（如 `https://generativelanguage.googleapis.com/v1beta/openai`）
-- **API Key**：你的 API Key
-- **Model**：模型名称（如 `gemini-2.5-flash`）
-- **Worker URL**：你的 Cloudflare Worker 地址（如 `https://sszj.me`），填写后请求会走 Worker 代理
+- **Provider**：`openai` 或 `gemini`
+- **URL**：OpenAI-compatible API 地址，如 `https://generativelanguage.googleapis.com/v1beta/openai`
+- **API Key**：真实上游 API Key
+- **Model**：模型名称，如 `gemini-2.5-flash`
+- **Route Mode**：`direct` 或 `worker_sni`
+- **Worker URL**：Cloudflare Worker 地址，`worker_sni` 时填写
+- **HTTP3 / QUIC**：独立优化开关，可和 `direct` 或 `worker_sni` 组合
 
-配置保存在项目目录 `config.json`。
+旧版单配置会在读取时自动迁移为默认 profile。
 
 ## Cloudflare Worker
 
@@ -79,13 +113,12 @@ npx wrangler deploy     # 部署
 
 ## 日志
 
-启动时控制台打印配置和日志路径：
-
 - 配置：`./config.json`
 - 日志：`./log/llm-agent.log`
+- 正常日志只写文件，不输出到终端
 
 ## 验证
 
 ```bash
-GOCACHE=/tmp/go-build go test ./...
+GOCACHE=/tmp/go-build-cache go test ./...
 ```

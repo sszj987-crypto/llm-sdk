@@ -212,6 +212,11 @@ fieldset label {
   padding-top: 8px;
 }
 
+.inline-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .settings-actions button:last-child {
   background: var(--accent-dim);
   color: var(--accent);
@@ -220,6 +225,49 @@ fieldset label {
 
 .settings-actions button:last-child:hover {
   background: rgba(59, 130, 246, 0.22);
+}
+
+.diagnose-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diagnose-panel h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f1f3f5;
+}
+
+.diagnose-summary {
+  font-family: var(--font);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.diagnose-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font);
+  font-size: 0.8rem;
+}
+
+.diagnose-panel th,
+.diagnose-panel td {
+  border-top: 1px solid var(--border);
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.diagnose-panel th {
+  color: var(--text-muted);
+  width: 180px;
+  font-weight: 500;
 }
 
 /* ===== Header with action ===== */

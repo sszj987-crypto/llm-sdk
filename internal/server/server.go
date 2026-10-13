@@ -2,116 +2,38 @@ package server
 
 import (
 	"bytes"
-	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
-	"net"
 	"net/http"
+	"strings"
 	"time"
-
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
 
 	assets "llm-sdk"
 	"llm-sdk/internal/config"
-	"llm-sdk/internal/dialer"
+	"llm-sdk/internal/gateway"
 	"llm-sdk/internal/ipdb"
 	"llm-sdk/internal/provider"
 )
 
 type Server struct {
-	store  *config.Store
-	client *http.Client
-	echDialer *dialer.Dialer
-	ipdbCli   *ipdb.Client
-	quicTransport *http3.Transport
-	openAI *provider.OpenAIAdapter
-	gemini *provider.GeminiAdapter
+	store   *config.Store
+	ipdbCli *ipdb.Client
+	gateway *gateway.Gateway
 }
 
 func New(store *config.Store) (*Server, error) {
-	cfg, err := store.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-
-	echDialer := dialer.New()
-
-	// Start IPDB client for auto-fetching preferred CF IPs.
 	ipdbCli := ipdb.NewClient()
-	if ipdbCli.Count() > 0 {
-		echDialer.SetIPProvider(ipdbCli)
-		log.Printf("[server] ipdb_initialized preferred_ips=%d", ipdbCli.Count())
-	} else {
-		log.Printf("[server] ipdb_no_ips — falling back to DNS resolution")
-	}
-
-	var client *http.Client
-	var quicTransport *http3.Transport
-
-	if cfg.QuicEnable {
-		log.Printf("[server] quic_enabled — using HTTP/3 transport")
-
-		quicDialer := dialer.NewQuicDialer()
-		if ipdbCli != nil && ipdbCli.Count() > 0 {
-			quicDialer.SetIPProvider(ipdbCli)
-		}
-		qt := &http3.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS13,
-			},
-			QUICConfig: &quic.Config{
-				HandshakeIdleTimeout:       15 * time.Second,
-				Allow0RTT:                  true,
-				InitialStreamReceiveWindow: 5 * 1024 * 1024,
-				DisablePathMTUDiscovery:    true,
-				InitialPacketSize:          1450,
-			},
-			Dial: quicDialer.Dial,
-		}
-		quicTransport = qt
-		client = &http.Client{
-			Timeout:   0,
-			Transport: qt,
-		}
-	} else {
-		log.Printf("[server] quic_disabled — using TCP/HTTP2 transport")
-
-		transport := &http.Transport{
-			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				host, port, err := netSplitHostPort(addr)
-				if err != nil {
-					return nil, err
-				}
-				if port != "" {
-					echDialer.Port = port
-				}
-				return echDialer.DialTLSContext(ctx, network, host)
-			},
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS13,
-			},
-			ForceAttemptHTTP2: true,
-		}
-
-		client = &http.Client{
-			Timeout:   0,
-			Transport: transport,
-		}
+	if ipdbCli.Count() == 0 {
+		log.Printf("[server] ipdb_no_ips falling_back_to_dns=true")
 	}
 
 	return &Server{
-		store:         store,
-		client:        client,
-		echDialer:     echDialer,
-		ipdbCli:       ipdbCli,
-		quicTransport: quicTransport,
-		openAI:        provider.NewOpenAIAdapter(client),
-		gemini:        provider.NewGeminiAdapter(client),
+		store:   store,
+		ipdbCli: ipdbCli,
+		gateway: gateway.New(ipdbCli),
 	}, nil
 }
 
@@ -120,34 +42,6 @@ func (s *Server) Shutdown() {
 	if s.ipdbCli != nil {
 		s.ipdbCli.Stop()
 	}
-	if s.quicTransport != nil {
-		s.quicTransport.Close()
-	}
-}
-
-func netSplitHostPort(hostport string) (host, port string, err error) {
-	for i := len(hostport) - 1; i >= 0; i-- {
-		if hostport[i] == ':' {
-			if hostport[0] == '[' {
-				end := stringsIndexByte(hostport, ']')
-				if end < 0 {
-					return "", "", fmt.Errorf("missing ']' in address")
-				}
-				return hostport[1:end], hostport[end+2:], nil
-			}
-			return hostport[:i], hostport[i+1:], nil
-		}
-	}
-	return hostport, "", nil
-}
-
-func stringsIndexByte(s string, c byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -158,7 +52,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.Handle("/", http.FileServer(http.FS(webSubFS)))
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/chat", s.handleChat)
+	mux.HandleFunc("/api/diagnose/profile/", s.handleDiagnoseProfile)
 	mux.HandleFunc("/api/ipdb/status", s.handleIpdbStatus)
+	mux.HandleFunc("/v1/models", s.handleV1Models)
+	mux.HandleFunc("/v1/chat/completions", s.handleV1ChatCompletions)
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -187,8 +84,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 type chatRequest struct {
-	Provider string             `json:"provider"`
-	Messages []provider.Message `json:"messages"`
+	Provider  string             `json:"provider"`
+	ProfileID string             `json:"profileId"`
+	Model     string             `json:"model"`
+	Messages  []provider.Message `json:"messages"`
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -213,17 +112,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	providerName := req.Provider
-	if providerName == "" {
-		providerName = cfg.Provider
+	profile, ok := selectProfile(cfg, req.ProfileID, req.Model, req.Provider)
+	if !ok {
+		http.Error(w, "no matching profile", http.StatusBadRequest)
+		return
 	}
-	selected := provider.Config{
-		BaseURL:   cfg.BaseURL,
-		APIKey:    cfg.APIKey,
-		Model:     cfg.Model,
-		WorkerURL: cfg.WorkerURL,
-	}
-	log.Printf("[request_id=%s] provider_config base_url=%s model=%s worker_url_set=%t", requestID, selected.BaseURL, selected.Model, selected.WorkerURL != "")
+	log.Printf("[request_id=%s] profile_config profile=%s provider=%s base_url=%s model=%s route=%s http3=%t worker_url_set=%t", requestID, profile.ID, profile.Provider, profile.BaseURL, profile.Model, profile.RouteMode, profile.HTTP3Enabled, profile.WorkerURL != "")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -245,7 +139,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return s.writeLine(w, payload, flusher)
 	}
 
-	err = s.chatStream(r.Context(), providerName, selected, req.Messages, func(delta string) error {
+	chatReq := gateway.ChatRequest{
+		Model:    req.Model,
+		Messages: req.Messages,
+		Stream:   true,
+		Raw: map[string]any{
+			"model":    profile.UpstreamModel(),
+			"messages": req.Messages,
+			"stream":   true,
+		},
+	}
+	_, err = s.gateway.Chat(r.Context(), profile, chatReq, func(delta string) error {
 		return writeEvent("delta", delta)
 	})
 	if err != nil {
@@ -255,18 +159,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = writeEvent("done", "")
 	log.Printf("[request_id=%s] chat_done ts=%s elapsed=%s", requestID, time.Now().Format(time.RFC3339Nano), time.Since(start).Round(time.Millisecond))
-}
-
-func (s *Server) chatStream(ctx context.Context, providerName string, cfg provider.Config, messages []provider.Message, onDelta provider.StreamHandler) error {
-	client := s.client
-	switch providerName {
-	case string(config.ProviderOpenAI):
-		return provider.NewOpenAIAdapter(client).Chat(ctx, cfg, messages, onDelta)
-	case string(config.ProviderGemini):
-		return provider.NewGeminiAdapter(client).Chat(ctx, cfg, messages, onDelta)
-	default:
-		return fmt.Errorf("unsupported provider: %s", providerName)
-	}
 }
 
 func (s *Server) writeLine(w http.ResponseWriter, payload any, flusher http.Flusher) error {
@@ -285,6 +177,221 @@ func (s *Server) writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(payload)
 }
+
+func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := s.store.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data := make([]map[string]any, 0, len(cfg.Profiles))
+	for _, profile := range cfg.Profiles {
+		data = append(data, map[string]any{
+			"id":       profile.Model,
+			"object":   "model",
+			"owned_by": profile.Provider,
+			"profile":  profile.ID,
+		})
+	}
+	s.writeJSON(w, map[string]any{
+		"object": "list",
+		"data":   data,
+	})
+}
+
+func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	start := time.Now()
+	requestID := fmt.Sprintf("v1chat-%d", start.UnixNano())
+
+	chatReq, err := gateway.ParseChatRequest(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.store.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	profile, ok := cfg.FindProfileForModel(chatReq.Model)
+	if !ok {
+		http.Error(w, "no profile configured", http.StatusBadRequest)
+		return
+	}
+	log.Printf("[request_id=%s] v1_chat_received profile=%s requested_model=%s stream=%t messages=%d", requestID, profile.ID, chatReq.Model, chatReq.Stream, len(chatReq.Messages))
+
+	if chatReq.Stream {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+
+		result, err := s.gateway.Chat(r.Context(), profile, chatReq, func(delta string) error {
+			return writeOpenAISSE(w, flusher, profile.UpstreamModel(), delta)
+		})
+		if err != nil {
+			_ = writeOpenAIErrorSSE(w, flusher, err)
+			return
+		}
+		_ = writeOpenAISSEDone(w, flusher)
+		log.Printf("[request_id=%s] v1_chat_done elapsed=%s trace=%v", requestID, time.Since(start).Round(time.Millisecond), result.Trace)
+		return
+	}
+
+	result, err := s.gateway.Chat(r.Context(), profile, chatReq, nil)
+	if err != nil {
+		writeOpenAIErrorJSON(w, err)
+		return
+	}
+	s.writeJSON(w, openAICompletionResponse(profile.UpstreamModel(), result.Text))
+	log.Printf("[request_id=%s] v1_chat_done elapsed=%s trace=%v", requestID, time.Since(start).Round(time.Millisecond), result.Trace)
+}
+
+func (s *Server) handleDiagnoseProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	profileID := strings.TrimPrefix(r.URL.Path, "/api/diagnose/profile/")
+	if profileID == "" {
+		http.Error(w, "profile id is required", http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.store.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	profile := cfg.FindProfile(profileID)
+	if profile == nil {
+		http.Error(w, "profile not found", http.StatusNotFound)
+		return
+	}
+	result := s.gateway.Diagnose(r.Context(), *profile)
+	s.writeJSON(w, result)
+}
+
+func selectProfile(cfg config.Config, profileID string, model string, providerName string) (config.Profile, bool) {
+	if profileID != "" {
+		if profile := cfg.FindProfile(profileID); profile != nil {
+			return *profile, true
+		}
+		return config.Profile{}, false
+	}
+	if model != "" {
+		return cfg.FindProfileForModel(model)
+	}
+	if providerName != "" {
+		for _, profile := range cfg.Profiles {
+			if profile.Provider == providerName {
+				return profile, true
+			}
+		}
+	}
+	return cfg.ActiveProfile()
+}
+
+func writeOpenAISSE(w http.ResponseWriter, flusher http.Flusher, model string, delta string) error {
+	payload := map[string]any{
+		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   model,
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"delta": map[string]string{
+					"content": delta,
+				},
+				"finish_reason": nil,
+			},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
+}
+
+func writeOpenAIErrorSSE(w http.ResponseWriter, flusher http.Flusher, err error) error {
+	payload := map[string]any{
+		"error": map[string]any{
+			"message": err.Error(),
+			"type":    "gateway_error",
+		},
+	}
+	data, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if _, writeErr := fmt.Fprintf(w, "data: %s\n\n", data); writeErr != nil {
+		return writeErr
+	}
+	return writeOpenAISSEDone(w, flusher)
+}
+
+func writeOpenAISSEDone(w http.ResponseWriter, flusher http.Flusher) error {
+	if _, err := io.WriteString(w, "data: [DONE]\n\n"); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
+}
+
+func openAICompletionResponse(model string, content string) map[string]any {
+	now := time.Now()
+	return map[string]any{
+		"id":      fmt.Sprintf("chatcmpl-%d", now.UnixNano()),
+		"object":  "chat.completion",
+		"created": now.Unix(),
+		"model":   model,
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"message": map[string]string{
+					"role":    "assistant",
+					"content": content,
+				},
+				"finish_reason": "stop",
+			},
+		},
+	}
+}
+
+func writeOpenAIErrorJSON(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	if upstreamErr, ok := err.(*gateway.UpstreamError); ok && upstreamErr.StatusCode >= 400 && upstreamErr.StatusCode < 500 {
+		status = http.StatusBadRequest
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]any{
+			"message": err.Error(),
+			"type":    "gateway_error",
+		},
+	})
+}
+
 func (s *Server) handleIpdbStatus(w http.ResponseWriter, r *http.Request) {
 	if s.ipdbCli == nil {
 		s.writeJSON(w, map[string]any{"enabled": false, "count": 0})

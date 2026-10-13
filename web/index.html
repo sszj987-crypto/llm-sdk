@@ -18,11 +18,21 @@
         <section class="panel">
           <div class="grid">
             <fieldset>
-              <legend>Provider</legend>
-              <label>URL <input id="baseURL" placeholder="https://generativelanguage.googleapis.com/v1beta/openai" /></label>
-              <label>API Key <input id="apiKey" type="password" /></label>
-              <label>Model <input id="model" placeholder="gemini-2.5-flash" /></label>
-              <label>Worker URL <input id="workerURL" placeholder="https://sszj.me (可选)" /></label>
+              <legend>Profiles</legend>
+              <label>
+                当前 Profile
+                <select id="profileSelect"></select>
+              </label>
+              <div class="inline-actions">
+                <button id="newProfileBtn" type="button">新增</button>
+                <button id="deleteProfileBtn" type="button" class="ghost-btn">删除</button>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Profile Config</legend>
+              <label>ID <input id="profileId" placeholder="gemini-main" /></label>
+              <label>Name <input id="profileName" placeholder="Gemini Main" /></label>
               <label>
                 Provider 类型
                 <select id="provider">
@@ -30,17 +40,36 @@
                   <option value="gemini">Gemini</option>
                 </select>
               </label>
-              <label class="quic-toggle">
+              <label>URL <input id="baseURL" placeholder="https://generativelanguage.googleapis.com/v1beta/openai" /></label>
+              <label>API Key <input id="apiKey" type="password" /></label>
+              <label>Model <input id="model" placeholder="gemini-2.5-flash" /></label>
+              <label>
+                Route Mode
+                <select id="routeMode">
+                  <option value="direct">direct</option>
+                  <option value="worker_sni">worker_sni</option>
+                </select>
+              </label>
+              <label>Worker URL <input id="workerURL" placeholder="https://sszj.me (worker_sni 时填写)" /></label>
+              <label class="checkbox-label">
                 <input type="checkbox" id="quicEnable" />
-                <span>QUIC / HTTP3</span>
+                <span>HTTP3 / QUIC</span>
               </label>
             </fieldset>
-
           </div>
 
           <div class="settings-actions">
             <button id="saveBtn">保存</button>
+            <button id="diagnoseBtn" type="button">诊断</button>
             <button id="goChatBtn">进入聊天</button>
+          </div>
+
+          <div id="diagnosePanel" class="diagnose-panel" hidden>
+            <h2>诊断结果</h2>
+            <div id="diagnoseSummary" class="diagnose-summary"></div>
+            <table>
+              <tbody id="diagnoseTable"></tbody>
+            </table>
           </div>
         </section>
       </div>
